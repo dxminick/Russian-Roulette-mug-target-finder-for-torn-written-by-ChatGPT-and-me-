@@ -1,0 +1,207 @@
+// ==UserScript==
+// @name         Russian Roulette Mugging Tracker with Enhanced Stat Estimation for TornPDA
+// @namespace    http://tampermonkey.net/
+// @version      0.5
+// @description  Tracks players leaving Russian Roulette, estimates their stats using rank triggers, and displays them in a UI on TornPDA
+// @author       YourName
+// @match        https://pda.torn.com/*
+// @grant        GM_xmlhttpRequest
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // Your API key
+    const apiKey = 'YOUR_API_KEY_HERE';
+
+    // Create UI element
+    let panel = document.createElement('div');
+    panel.id = 'muggingTrackerPanel';
+    panel.style.position = 'fixed';
+    panel.style.bottom = '10px';
+    panel.style.right = '10px';
+    panel.style.width = '90%';
+    panel.style.maxWidth = '300px';
+    panel.style.height = 'auto';
+    panel.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    panel.style.color = 'white';
+    panel.style.padding = '10px';
+    panel.style.borderRadius = '10px';
+    panel.style.zIndex = '1000';
+    panel.style.display = 'none';
+    panel.style.fontSize = '14px';
+    document.body.appendChild(panel);
+
+    // Add a title
+    let title = document.createElement('h3');
+    title.innerText = 'Mugging Targets with Stats';
+    title.style.fontSize = '16px';
+    title.style.marginBottom = '10px';
+    panel.appendChild(title);
+
+    // Create list element to display targets
+    let targetList = document.createElement('ul');
+    targetList.id = 'targetList';
+    targetList.style.maxHeight = '200px';
+    targetList.style.overflowY = 'auto';
+    panel.appendChild(targetList);
+
+    // Fetch Russian Roulette participants
+    function fetchRouletteParticipants() {
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: `https://api.torn.com/game/?selections=roulette&key=${apiKey}`,
+            onload: function(response) {
+                let data = JSON.parse(response.responseText);
+                let participants = data.roulette.participants;
+
+                checkForLeavers(participants);
+            }
+        });
+    }
+
+    // Check for leavers (those not in the current game but recently participated)
+    function checkForLeavers(currentParticipants) {
+        let previousParticipants = JSON.parse(localStorage.getItem('previousParticipants')) || [];
+        let leavers = previousParticipants.filter(p => !currentParticipants.some(cp => cp.user_id === p.user_id));
+
+        if (leavers.length > 0) {
+            leavers.forEach(player => fetchPlayerData(player));
+        }
+
+        localStorage.setItem('previousParticipants', JSON.stringify(currentParticipants));
+    }
+
+    // Fetch player data and estimate stats based on rank triggers
+    function fetchPlayerData(player) {
+        GM_xmlhttpRequest({
+            method: 'GET',
+            url: `https://api.torn.com/user/${player.user_id}?selections=profile,personalstats&key=${apiKey}`,
+            onload: function(response) {
+                let data = JSON.parse(response.responseText);
+                let estimatedStats = estimateStats(data);
+
+                displayLeaver(player, estimatedStats);
+            }
+        });
+    }
+
+    // Estimate stats using the method described in the forum post
+    function estimateStats(data) {
+        const rank = data.rank;
+        const level = data.level;
+        const crimes = data.criminalrecord.total;
+        const networth = data.personalstats.networth;
+
+        let rankTriggers = calculateRankTriggers(level, crimes, networth);
+
+        let statRange = estimateStatRange(rank, rankTriggers);
+
+        return {
+            strength: statRange.min * 0.4,
+            speed: statRange.min * 0.2,
+            dexterity: statRange.min * 0.2,
+            defense: statRange.min * 0.2,
+            maxStats: statRange.max
+        };
+    }
+
+    // Calculate rank triggers based on level, crimes, and networth
+    function calculateRankTriggers(level, crimes, networth) {
+        let levelTriggers = 0;
+        let crimeTriggers = 0;
+        let networthTriggers = 0;
+
+        if (level >= 2) levelTriggers++;
+        if (level >= 6) levelTriggers++;
+        if (level >= 11) levelTriggers++;
+        if (level >= 26) levelTriggers++;
+        if (level >= 31) levelTriggers++;
+        if (level >= 50) levelTriggers++;
+
+        if (crimes >= 100) crimeTriggers++;
+        if (crimes >= 5000) crimeTriggers++;
+        if (crimes >= 10000) crimeTriggers++;
+        if (crimes >= 20000) crimeTriggers++;
+
+        if (networth >= 5000000) networthTriggers++;
+        if (networth >= 50000000) networthTriggers++;
+        if (networth >= 500000000) networthTriggers++;
+        if (networth >= 5000000000) networthTriggers++;
+
+        return levelTriggers + crimeTriggers + networthTriggers;
+    }
+
+    // Estimate stat range based on rank and remaining triggers
+    function estimateStatRange(rank, rankTriggers) {
+        const battleStatTriggers = rank - rankTriggers;
+        let minStats, maxStats;
+
+        switch (battleStatTriggers) {
+            case 0:
+                minStats = 0;
+                maxStats = 2500;
+                break;
+            case 1:
+                minStats = 2500;
+                maxStats = 25000;
+                break;
+            case 2:
+                minStats = 25000;
+                maxStats = 250000;
+                break;
+            case 3:
+                minStats = 250000;
+                maxStats = 2500000;
+                break;
+            case 4:
+                minStats = 2500000;
+                maxStats = 35000000;
+                break;
+            case 5:
+                minStats = 35000000;
+                maxStats = 250000000;
+                break;
+            default:
+                minStats = 250000000;
+                maxStats = Number.MAX_SAFE_INTEGER;
+                break;
+        }
+
+        return { min: minStats, max: maxStats };
+    }
+
+    // Display leaver with estimated stats in the UI
+    function displayLeaver(player, estimatedStats) {
+        let listItem = document.createElement('li');
+        listItem.innerHTML = `
+            <strong>${player.name} (ID: ${player.user_id})</strong><br>
+            Strength: ${Math.round(estimatedStats.strength)}<br>
+            Speed: ${Math.round(estimatedStats.speed)}<br>
+            Dexterity: ${Math.round(estimatedStats.dexterity)}<br>
+            Defense: ${Math.round(estimatedStats.defense)}<br>
+            Max Stat Estimate: ${Math.round(estimatedStats.maxStats)}
+        `;
+        listItem.style.marginBottom = '10px';
+        targetList.appendChild(listItem);
+
+        panel.style.display = 'block';
+    }
+
+    // Run the script at intervals to keep checking
+    setInterval(fetchRouletteParticipants, 60000); // checks every minute
+
+    // Add some basic styling
+    GM_addStyle(`
+        #muggingTrackerPanel ul {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+        #muggingTrackerPanel li {
+            margin: 5px 0;
+        }
+    `);
+
+})();
