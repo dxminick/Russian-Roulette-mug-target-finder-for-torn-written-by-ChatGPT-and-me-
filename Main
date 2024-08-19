@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Russian Roulette Mugging Tracker with Enhanced Stat Estimation for TornPDA
 // @namespace    http://tampermonkey.net/
-// @version      0.5
+// @version      0.6
 // @description  Tracks players leaving Russian Roulette, estimates their stats using rank triggers, and displays them in a UI on TornPDA
 // @author       YourName
-// @match        https://pda.torn.com/*
+// @match        https://www.torn.com/page.php?sid=russianRoulette#/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // ==/UserScript==
@@ -21,8 +21,7 @@
     panel.style.position = 'fixed';
     panel.style.bottom = '10px';
     panel.style.right = '10px';
-    panel.style.width = '90%';
-    panel.style.maxWidth = '300px';
+    panel.style.width = '300px';
     panel.style.height = 'auto';
     panel.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
     panel.style.color = 'white';
@@ -47,30 +46,33 @@
     targetList.style.overflowY = 'auto';
     panel.appendChild(targetList);
 
-    // Fetch Russian Roulette participants
-    function fetchRouletteParticipants() {
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: `https://api.torn.com/game/?selections=roulette&key=${apiKey}`,
-            onload: function(response) {
-                let data = JSON.parse(response.responseText);
-                let participants = data.roulette.participants;
+    // Previous participants stored locally
+    let previousParticipants = JSON.parse(localStorage.getItem('previousParticipants')) || [];
 
-                checkForLeavers(participants);
-            }
+    // Fetch participants on the Russian Roulette page
+    function fetchParticipants() {
+        let participants = [];
+
+        // Assuming that the participants' IDs or elements containing their IDs can be scraped from the page
+        document.querySelectorAll('.participantSelector').forEach(participant => {
+            let userId = participant.getAttribute('data-user-id'); // Replace with actual attribute if different
+            let userName = participant.querySelector('.userName').innerText; // Replace with actual selector if different
+            participants.push({user_id: userId, name: userName});
         });
+
+        checkForLeavers(participants);
     }
 
     // Check for leavers (those not in the current game but recently participated)
     function checkForLeavers(currentParticipants) {
-        let previousParticipants = JSON.parse(localStorage.getItem('previousParticipants')) || [];
         let leavers = previousParticipants.filter(p => !currentParticipants.some(cp => cp.user_id === p.user_id));
 
         if (leavers.length > 0) {
             leavers.forEach(player => fetchPlayerData(player));
         }
 
-        localStorage.setItem('previousParticipants', JSON.stringify(currentParticipants));
+        previousParticipants = currentParticipants;
+        localStorage.setItem('previousParticipants', JSON.stringify(previousParticipants));
     }
 
     // Fetch player data and estimate stats based on rank triggers
@@ -190,7 +192,7 @@
     }
 
     // Run the script at intervals to keep checking
-    setInterval(fetchRouletteParticipants, 60000); // checks every minute
+    setInterval(fetchParticipants, 60000); // checks every minute
 
     // Add some basic styling
     GM_addStyle(`
