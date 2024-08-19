@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      0.6
 // @description  Tracks players leaving Russian Roulette, estimates their stats using rank triggers, and displays them in a UI on TornPDA
-// @author       YourName
+// @author       -dominick-, ChatGPT 4.0 mini, ChatGPT and 4.0
 // @match        https://www.torn.com/page.php?sid=russianRoulette#/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
